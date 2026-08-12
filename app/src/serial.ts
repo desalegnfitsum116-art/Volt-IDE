@@ -1,6 +1,7 @@
 /**
  * Serial monitor panel: connect/disconnect, live streamed output, and an
- * input box that sends back to the board.
+ * input box that sends back to the board. Supports configurable line
+ * endings, auto-scroll, and optional timestamps on received data.
  */
 
 import {
@@ -12,11 +13,23 @@ import {
   Settings,
 } from "./api";
 
+type LineEnding = "none" | "cr" | "lf" | "crlf";
+
+const LINE_ENDING_MAP: Record<LineEnding, string> = {
+  none: "",
+  cr: "\r",
+  lf: "\n",
+  crlf: "\r\n",
+};
+
 export class SerialPanel {
   private outputEl: HTMLElement;
   private statusEl: HTMLElement;
   private inputEl: HTMLInputElement;
   private baudEl: HTMLInputElement;
+  private lineEndingEl: HTMLSelectElement;
+  private autoScrollEl: HTMLInputElement;
+  private timestampsEl: HTMLInputElement;
   private connectBtn: HTMLButtonElement;
   private sendBtn: HTMLButtonElement;
   private connected = false;
@@ -29,6 +42,9 @@ export class SerialPanel {
     this.statusEl = document.getElementById("serial-status")!;
     this.inputEl = document.getElementById("serial-input") as HTMLInputElement;
     this.baudEl = document.getElementById("serial-baud") as HTMLInputElement;
+    this.lineEndingEl = document.getElementById("serial-line-ending") as HTMLSelectElement;
+    this.autoScrollEl = document.getElementById("serial-autoscroll") as HTMLInputElement;
+    this.timestampsEl = document.getElementById("serial-timestamps") as HTMLInputElement;
     this.connectBtn = document.getElementById("btn-serial-connect") as HTMLButtonElement;
     this.sendBtn = document.getElementById("btn-serial-send") as HTMLButtonElement;
 
@@ -97,23 +113,50 @@ export class SerialPanel {
   private send() {
     const text = this.inputEl.value;
     if (!text || !this.connected) return;
-    serialSend(text + "\n").catch((e) => this.append(`\r\n[send error: ${e}]\r\n`));
+    const ending = LINE_ENDING_MAP[this.lineEndingEl.value as LineEnding] ?? "\n";
+    serialSend(text + ending).catch((e) => this.append(`\r\n[send error: ${e}]\r\n`));
     this.append(`→ ${text}\r\n`);
     this.inputEl.value = "";
   }
 
   private append(text: string) {
-    // Keep raw bytes readable; non-printable a→ '.'.
+    // Keep raw bytes readable; non-printable → replacement char.
     let clean = "";
     for (const ch of text) {
       const c = ch.codePointAt(0)!;
       clean += c === 13 || c === 10 ? ch : c >= 32 && c < 127 ? ch : "\uFFFD";
     }
+
+    // Optional timestamp prefix on each received line.
+    if (this.timestampsEl.checked) {
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const ts = `[${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}] `;
+      // Prefix the first line of this chunk; subsequent lines get their own
+      // timestamp by splitting on newlines.
+      const lines = clean.split(/(\r?\n)/);
+      let out = "";
+      let atLineStart = true;
+      for (const part of lines) {
+        if (part === "\n" || part === "\r\n") {
+          out += part;
+          atLineStart = true;
+        } else if (part.length > 0) {
+          out += (atLineStart ? ts : "") + part;
+          atLineStart = false;
+        }
+      }
+      clean = out;
+    }
+
     const span = document.createElement("span");
     span.className = "out-stdout";
     span.textContent = clean;
     this.outputEl.appendChild(span);
-    this.outputEl.scrollTop = this.outputEl.scrollHeight;
+
+    if (this.autoScrollEl.checked) {
+      this.outputEl.scrollTop = this.outputEl.scrollHeight;
+    }
   }
 
   private updateButtons() {

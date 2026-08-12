@@ -90,6 +90,19 @@
         <div class="panel-toolbar">
           <button id="btn-serial-connect" title="Open/close the board's serial port">Connect</button>
           <input id="serial-baud" type="number" value="9600" min="300" max="2000000" title="Baud rate" />
+          <select id="serial-line-ending" title="Line ending appended to sent data">
+            <option value="none">No line ending</option>
+            <option value="cr">CR</option>
+            <option value="lf" selected>LF</option>
+            <option value="crlf">CRLF</option>
+          </select>
+          <span class="toolbar-sep"></span>
+          <label class="serial-toggle" title="Auto-scroll to bottom on new data">
+            <input id="serial-autoscroll" type="checkbox" checked /> Auto-scroll
+          </label>
+          <label class="serial-toggle" title="Prepend a timestamp to received lines">
+            <input id="serial-timestamps" type="checkbox" /> Timestamps
+          </label>
           <span class="toolbar-sep"></span>
           <button id="btn-serial-clear" title="Clear serial output">Clear</button>
           <span id="serial-status" class="panel-status"></span>

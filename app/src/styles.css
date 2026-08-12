@@ -768,6 +768,22 @@ input[type="number"] {
   color: var(--warning);
 }
 
+.serial-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.serial-toggle input[type="checkbox"] {
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
 #serial-input-row {
   display: flex;
   gap: 6px;
