@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Volt IDE</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header id="toolbar">
+      <span id="app-title">Volt IDE</span>
+      <div class="toolbar-group">
+        <button id="btn-open" title="Open file (Ctrl+O)">Open</button>
+        <button id="btn-open-folder" title="Open folder as project">Folder</button>
+        <button id="btn-save" title="Save (Ctrl+S)">Save</button>
+        <button id="btn-saveas" title="Save As (Ctrl+Shift+S)">Save As</button>
+      </div>
+      <div class="toolbar-group">
+        <button id="btn-compile" title="Compile with voltc (Ctrl+B)">Compile</button>
+        <select id="select-board" title="Target board"></select>
+        <select id="select-port" title="Serial port"></select>
+        <button id="btn-refresh-ports" title="Re-scan connected boards">Scan</button>
+        <button id="btn-flash" title="Compile and upload to board (Ctrl+R)">Flash to Board</button>
+      </div>
+      <button id="btn-settings" title="IDE settings">⚙</button>
+      <span id="file-label">No file open</span>
+    </header>
+
+    <main id="main">
+      <aside id="sidebar">
+        <div id="sidebar-tabs">
+          <button data-tab="explorer" class="active">Files</button>
+          <button data-tab="hardware">Hardware</button>
+        </div>
+        <section id="panel-explorer" class="side-panel">
+          <div id="explorer-root" class="explorer-muted">No folder open — click <em>Folder</em></div>
+          <div id="explorer-tree" class="explorer-tree hidden"></div>
+        </section>
+        <section id="panel-hardware" class="side-panel hidden">
+          <div class="panel-heading">Hardware objects in this file</div>
+          <div id="hardware-list" class="hardware-list">
+            <div class="explorer-muted">No hardware found yet.</div>
+          </div>
+        </section>
+      </aside>
+
+      <section id="editor-region">
+        <div id="editor-container"></div>
+        <div id="editor-overlay" class="hidden"></div>
+      </section>
+    </main>
+
+    <div id="bottom">
+      <div id="bottom-tabs">
+        <button data-tab="console" class="active">Console</button>
+        <button data-tab="serial">Serial Monitor</button>
+      </div>
+      <section id="panel-console" class="bottom-panel">
+        <div class="panel-toolbar">
+          <button id="btn-console-clear" title="Clear console">Clear</button>
+          <span id="console-status" class="panel-status"></span>
+        </div>
+        <pre id="console-output" class="mono-scroll"></pre>
+      </section>
+      <section id="panel-serial" class="bottom-panel hidden">
+        <div class="panel-toolbar">
+          <button id="btn-serial-connect" title="Open/close the board's serial port">Connect</button>
+          <input id="serial-baud" type="number" value="9600" min="300" max="2000000" title="Baud rate" />
+          <span class="toolbar-sep"></span>
+          <button id="btn-serial-clear" title="Clear serial output">Clear</button>
+          <span id="serial-status" class="panel-status"></span>
+        </div>
+        <pre id="serial-output" class="mono-scroll"></pre>
+        <div id="serial-input-row">
+          <input id="serial-input" type="text" placeholder="Type to send and press Enter…" autocomplete="off" />
+          <button id="btn-serial-send">Send</button>
+        </div>
+      </section>
+    </div>
+
+    <footer id="statusbar">
+      <span id="status-path" title="Active file path"></span>
+      <span id="status-toolchain" title="AVR toolchain status">toolchain…</span>
+      <span id="status-hint"></span>
+    </footer>
+
+    <div id="settings-popover" class="hidden">
+      <div class="settings-row">
+        <label for="set-theme">Theme</label>
+        <select id="set-theme">
+          <option value="dark">Dark</option>
+          <option value="light">Light</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <label for="set-font">Font size</label>
+        <input id="set-font" type="number" min="10" max="24" step="1" />
+      </div>
+      <div class="settings-row">
+        <label for="set-python">Python path</label>
+        <input id="set-python" type="text" placeholder="python (blank = PATH)" />
+      </div>
+      <div class="settings-row">
+        <button id="btn-settings-save">Save</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

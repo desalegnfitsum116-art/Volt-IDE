@@ -15,6 +15,7 @@ app/src-tauri/gen/schemas/
 __pycache__/
 *.pyc
 toolchain/src/volt/__pycache__/
+toolchain/build/
 
 # --- OS ---
 .DS_Store
