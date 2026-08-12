@@ -538,6 +538,23 @@ function setupSettings() {
   });
 }
 
+/**
+ * Jump the editor to a hardware object's source line (from the hardware
+ * sidebar click). The hardware panel always reflects the active buffer, so
+ * the line belongs to the active file.
+ */
+function onHardwareJump(line: number) {
+  const path = activePath();
+  if (!path) return;
+  hideStartScreen();
+  loadBufferIntoEditor(path);
+  view.dispatch({
+    selection: { anchor: view.state.doc.line(Math.min(line, view.state.doc.lines)).from },
+    scrollIntoView: true,
+  });
+  view.focus();
+}
+
 async function bootstrap() {
   settings = await readSettings().catch(() => ({}));
   const baudEl = document.getElementById("serial-baud") as HTMLInputElement;
@@ -558,6 +575,7 @@ async function bootstrap() {
 
   consolePanel.setDoneHandler(toolchainOnCompileDone);
   consolePanel.setJumpHandler(onConsoleErrorJump);
+  hardwarePanel.setJumpHandler(onHardwareJump);
   await serialPanel.listen();
   await consolePanel.listen();
   await initToolchainStatus();

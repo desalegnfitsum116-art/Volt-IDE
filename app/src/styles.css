@@ -535,14 +535,26 @@ input[type="number"] {
 
 .hw-item {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 2px;
   padding: 5px 8px;
   margin-bottom: 4px;
   background: var(--surface-elevated);
   border: 1px solid var(--border);
   border-radius: 6px;
   border-left: 3px solid var(--hardware);
+  cursor: pointer;
+}
+
+.hw-item:hover {
+  border-color: var(--border-strong);
+  background: var(--hover-row);
+}
+
+.hw-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .hw-item .hw-module {
@@ -554,6 +566,14 @@ input[type="number"] {
   font-family: Consolas, "Courier New", monospace;
   color: var(--success);
   font-size: 12px;
+}
+
+.hw-item .hw-handle {
+  font-family: Consolas, "Courier New", monospace;
+  color: var(--accent-glow);
+  font-size: 12px;
+  border-left: 1px solid var(--border);
+  padding-left: 8px;
 }
 
 .hw-item .hw-line {
