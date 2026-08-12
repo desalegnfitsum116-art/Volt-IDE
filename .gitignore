@@ -1,0 +1,25 @@
+# --- Node / Vite (frontend) ---
+node_modules/
+app/dist/
+app/dist-ssr/
+*.local
+
+# --- Rust / Tauri (backend) ---
+app/src-tauri/target/
+app/src-tauri/gen/schemas/
+
+# --- Tooling (portable local node build; not part of the repo) ---
+.tooling/
+
+# --- Python (bundled voltc) ---
+__pycache__/
+*.pyc
+toolchain/src/volt/__pycache__/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Editor ---
+.idea/
+.vscode/
