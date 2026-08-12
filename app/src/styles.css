@@ -427,21 +427,8 @@ input[type="number"] {
   display: none;
 }
 
-/* CM token colors — Volt palette (Section 4 of the brief) */
-.cm-content .tok-comment { color: #5C6370; font-style: italic; }
-.cm-content .tok-string { color: #A3E635; }
-.cm-content .tok-number { color: #F5A97F; }
-.cm-content .tok-keyword { color: #7B61FF; font-weight: 600; }
-.cm-content .tok-typeName { color: #56B6C2; }
-.cm-content .tok-namespace { color: #E3A15B; font-weight: 600; }
-.cm-content .tok-builtin { color: #A9B8FF; }
-.cm-content .tok-function { color: #61AFEF; }
-.cm-content .tok-variableName { color: #D8DCEE; }
-.cm-content .tok-constant { color: #D19A66; }
-.cm-content .tok-bool { color: #D19A66; }
-.cm-content .tok-operator { color: #ABB2BF; }
-.cm-content .tok-bracket { color: #ABB2BF; }
-.cm-content .tok-punctuation { color: #ABB2BF; }
+/* CM token colors now live in the Volt HighlightStyle theme in
+   src/volt/lang.ts (brief Section 4). This CSS only styles the CM chrome. */
 
 /* ------------------------------------------------------------- bottom panel */
 #bottom {

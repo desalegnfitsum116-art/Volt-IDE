@@ -1,4 +1,5 @@
-import { StreamLanguage, StreamParser, LanguageSupport, indentService, indentUnit } from "@codemirror/language";
+import { StreamLanguage, StreamParser, LanguageSupport, indentService, indentUnit, HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import { keymap } from "@codemirror/view";
 import { indentWithTab, insertNewlineAndIndent } from "@codemirror/commands";
 
@@ -6,9 +7,12 @@ import { indentWithTab, insertNewlineAndIndent } from "@codemirror/commands";
 // toolchain/src/volt/modules.py.
 const KEYWORDS = new Set([
   "func", "var", "if", "elif", "else", "while", "for", "return",
-  "import", "in", "break", "continue", "true", "false", "null",
+  "import", "in", "break", "continue",
   "module", "const", "not", "or", "and",
 ]);
+
+/** Literal/boolean constants (`true`, `false`, `null`). */
+export const CONSTANTS = new Set(["true", "false", "null"]);
 
 const TYPES = new Set(["int", "float", "bool", "string"]);
 
@@ -41,13 +45,14 @@ interface VoltState {
   lineStart: boolean;
   afterModule: boolean; // last significant token was a hardware module name
   afterDot: boolean;    // last token was '.'
+  afterFunc: boolean;   // last keyword token was `func` (next ident is a def name)
 }
 
 const voltParser: StreamParser<VoltState> = {
   name: "volt",
 
   startState() {
-    return { lineStart: true, afterModule: false, afterDot: false };
+    return { lineStart: true, afterModule: false, afterDot: false, afterFunc: false };
   },
 
   token(stream, state) {
@@ -95,17 +100,29 @@ const voltParser: StreamParser<VoltState> = {
       const word = m[0];
       let tag: string | null = "variableName";
       if (state.afterDot) {
-        // Member name: constants for modules, methods as functions.
-        if (
-          state.afterModule &&
-          Object.values(MODULE_CONSTANTS).some((cs) => cs.includes(word))
-        ) {
-          tag = "constant";
+        // Member access after `<Module>.`: constants for known `<Module>.NAME`,
+        // methods (Init/write/...) as hardware function calls.
+        if (state.afterModule) {
+          tag = Object.values(MODULE_CONSTANTS).some((cs) => cs.includes(word))
+            ? "constant"
+            : "namespace";
         } else {
           tag = "function";
         }
+      } else if (state.afterFunc) {
+        // `func name():` — the identifier after `func` is the function name.
+        tag = "function";
+      } else if (CONSTANTS.has(word)) {
+        tag = "constant";
       } else if (KEYWORDS.has(word)) {
         tag = "keyword";
+        // `func` declares a function; the next identifier is its def name.
+        // Early-return so the afterFunc flag survives the bottom reset.
+        if (word === "func") {
+          state.afterModule = false;
+          state.afterDot = false;
+          return tag;
+        }
       } else if (TYPES.has(word)) {
         tag = "typeName";
       } else if (MODULES.has(word)) {
@@ -116,6 +133,7 @@ const voltParser: StreamParser<VoltState> = {
         tag = "builtin";
       }
       state.afterModule = false;
+      state.afterFunc = false;
       state.afterDot = false;
       return tag;
     }
@@ -194,9 +212,30 @@ export const voltKeymap = keymap.of([
   { key: "Shift-Enter", run: insertNewlineAndIndent },
 ]);
 
-/** Language support for Volt: highlighting + indentation. */
+/**
+ * Volt editor theme — maps the brief's Section 4 token color list onto a
+ * CodeMirror `HighlightStyle` (not inline regex styling). Applied as part of
+ * the language definition so the grammar and its colors ship together.
+ */
+export const voltTheme = HighlightStyle.define([
+  { tag: tags.keyword, color: "#7B61FF", fontWeight: "600" },
+  { tag: tags.namespace, color: "#E3A15B", fontWeight: "600" },
+  { tag: tags.function, color: "#61AFEF" },
+  { tag: tags.string, color: "#A3E635" },
+  { tag: tags.number, color: "#F5A97F" },
+  { tag: tags.comment, color: "#5C6370", fontStyle: "italic" },
+  { tag: tags.operator, color: "#ABB2BF" },
+  { tag: tags.variableName, color: "#D8DCEE" },
+  { tag: tags.typeName, color: "#56B6C2" },
+  { tag: tags.bool, color: "#D19A66" },
+  { tag: tags.constant, color: "#D19A66" },
+  { tag: tags.standard, color: "#A9B8FF" },
+]);
+
+/** Language support for Volt: grammar (highlighting) + indentation + theme. */
 export function voltLanguage(): LanguageSupport {
   return new LanguageSupport(StreamLanguage.define(voltParser), [
+    syntaxHighlighting(voltTheme),
     voltIndent,
     indentUnit.of("    "),
     voltKeymap,
@@ -206,6 +245,7 @@ export function voltLanguage(): LanguageSupport {
 /** Keywords/types/modules/builtins used for autocomplete & highlighting. */
 export const voltKeywords = [
   ...KEYWORDS,
+  ...CONSTANTS,
   ...TYPES,
   ...MODULES,
   ...BUILTINS,
