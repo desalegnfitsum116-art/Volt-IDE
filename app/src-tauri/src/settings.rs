@@ -21,6 +21,8 @@ pub struct Settings {
     pub theme: Option<String>,
     /// Editor font size in px.
     pub font_size: Option<u32>,
+    /// Most-recently-opened .volt file paths (most recent first).
+    pub recent_files: Vec<String>,
 }
 
 pub struct SettingsState(pub Mutex<Settings>);

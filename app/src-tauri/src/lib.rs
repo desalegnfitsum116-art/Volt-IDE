@@ -37,6 +37,18 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(settings::SettingsState::default())
         .manage(SerialState::default())
+        .on_window_event(|window, event| {
+            // Drag-and-drop .volt files/folders onto the window (Stage 3).
+            if let tauri::WindowEvent::FileDrop(tauri::file_drop::FileDropEvent::Drop { paths, .. }) =
+                event
+            {
+                let paths: Vec<String> = paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect();
+                let _ = window.emit("file-drop", paths);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::fs::read_text_file,
             commands::fs::write_text_file,

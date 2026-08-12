@@ -6,6 +6,7 @@ import { ConsolePanel } from "./console";
 import { SerialPanel } from "./serial";
 import { Explorer } from "./explorer";
 import { HardwarePanel } from "./hardware";
+import { TabManager } from "./tabs";
 import {
   readTextFile,
   writeTextFile,
@@ -18,15 +19,19 @@ import {
   Settings,
   listDir,
   fileNameFromPath,
+  dirNameFromPath,
+  onFileDrop,
 } from "./api";
 
 const voltFilter = { name: "Volt", extensions: ["volt"] };
+const MAX_RECENT = 10;
 
 let view: EditorView;
-let currentPath: string | null = null;
-let fileName: string | null = null;
-let dirty = false;
 let settings: Settings = {};
+
+/** Per-open-tab document buffers (so switching tabs never loses edits). */
+const buffers = new Map<string, string>();
+let tabs: TabManager;
 
 const fileLabel = document.getElementById("file-label") as HTMLElement;
 const statusPath = document.getElementById("status-path") as HTMLElement;
@@ -34,6 +39,8 @@ const statusToolchain = document.getElementById("status-toolchain") as HTMLEleme
 const statusHint = document.getElementById("status-hint") as HTMLElement;
 const statusBoard = document.getElementById("status-board") as HTMLElement;
 const overlay = document.getElementById("editor-overlay") as HTMLElement;
+const startScreen = document.getElementById("start-screen") as HTMLElement;
+const recentList = document.getElementById("recent-list") as HTMLElement;
 
 const consolePanel = new ConsolePanel();
 const serialPanel = new SerialPanel(() => settings);
@@ -51,18 +58,49 @@ function setStatusDot(state: "idle" | "compiling" | "uploading" | "ok" | "error"
   dot.title = state;
 }
 
-function setDirty(value: boolean) {
-  dirty = value;
-  updateStatusBar();
+function activePath(): string | null {
+  return tabs.active?.path ?? null;
 }
 
 function updateStatusBar() {
-  fileLabel.textContent = dirty ? `● ${fileName ?? "No file open"}` : fileName ?? "No file open";
-  statusPath.textContent = currentPath ?? "";
+  const tab = tabs.active;
+  const label = tab ? (tab.dirty ? `● ${tab.name}` : tab.name) : "No file open";
+  fileLabel.textContent = label;
+  statusPath.textContent = tab?.path ?? "";
+}
+
+/** Persist the current editor buffer back into the tab's buffer map. */
+function commitActiveBuffer() {
+  const path = activePath();
+  if (path) buffers.set(path, editorText(view));
+}
+
+/** Load a tab's buffer into the editor and mark it active. */
+function loadBufferIntoEditor(path: string) {
+  const text = buffers.get(path) ?? "";
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
+  hardwarePanel.update(text);
+  explorer.highlightOpen(path);
+  updateStatusBar();
+}
+
+function activeTabDirty(): boolean {
+  return tabs.active?.dirty ?? false;
+}
+
+function setActiveDirty(dirty: boolean) {
+  const path = activePath();
+  if (!path) return;
+  tabs.setDirty(path, dirty);
+  updateStatusBar();
 }
 
 function onDocumentChange(source: string) {
-  if (!dirty) setDirty(true);
+  const path = activePath();
+  if (path) {
+    buffers.set(path, source);
+    if (!activeTabDirty()) setActiveDirty(true);
+  }
   hardwarePanel.update(source);
 }
 
@@ -70,20 +108,29 @@ function onLintCounts(_counts: { errors: number; warnings: number }) {
   // Errors are also surfaced as gutters; status hint keeps it readable.
 }
 
-async function loadDocument(path: string, contents: string) {
-  currentPath = path;
-  fileName = fileNameFromPath(path);
-  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: contents } });
-  setDirty(false);
-  hardwarePanel.update(contents);
-  updateStatusBar();
-  explorer.highlightOpen(path);
+async function pushRecentFile(path: string) {
+  const existing = settings.recent_files ?? [];
+  const next = [path, ...existing.filter((p) => p !== path)].slice(0, MAX_RECENT);
+  settings = { ...settings, recent_files: next };
+  await writeSettings(settings).catch(() => {});
+  renderStartScreen();
 }
 
+/** Open a path in a tab (reusing the open buffer if already open). */
 async function openPath(path: string) {
   try {
     const contents = await readTextFile(path);
-    await loadDocument(path, contents);
+    if (!tabs.isOpen(path)) buffers.set(path, contents);
+    tabs.open(path);
+    loadBufferIntoEditor(path);
+
+    if (!explorer.directory) {
+      // Opening a file directly (not via the explorer) — show its folder
+      // so the project context is visible.
+      const dir = dirNameFromPath(path);
+      if (dir) explorer.setDirectory(dir);
+    }
+    await pushRecentFile(path);
     refreshPorts();
   } catch (err) {
     await dialogMessage(`Cannot open ${path}: ${err}`, { title: "Volt IDE", kind: "error" });
@@ -91,7 +138,6 @@ async function openPath(path: string) {
 }
 
 async function openFileDialog() {
-  if (!(await confirmDiscard())) return;
   const selected = await dialogOpen({
     multiple: false,
     filters: [voltFilter],
@@ -113,19 +159,24 @@ async function openFolderDialog() {
   await refreshPorts();
 }
 
-async function confirmDiscard(): Promise<boolean> {
-  if (!dirty) return true;
-  return dialogAsk("Current file has unsaved changes. Discard them?", {
+async function confirmDiscard(path: string): Promise<boolean> {
+  if (!tabs.all.some((t) => t.path === path)) return true;
+  // Only prompt if the tab is dirty.
+  const tab = tabs.all.find((t) => t.path === path);
+  if (!tab?.dirty) return true;
+  return dialogAsk(`"${tab.name}" has unsaved changes. Discard them?`, {
     title: "Volt IDE",
     kind: "warning",
   });
 }
 
-async function saveFile(): Promise<boolean> {
-  if (currentPath === null) return saveFileAs();
+async function saveActiveFile(): Promise<boolean> {
+  const path = activePath();
+  if (!path) return false;
   try {
-    await writeTextFile(currentPath, editorText(view));
-    setDirty(false);
+    await writeTextFile(path, editorText(view));
+    buffers.set(path, editorText(view));
+    setActiveDirty(false);
     return true;
   } catch (err) {
     await dialogMessage(`Cannot save: ${err}`, { title: "Volt IDE", kind: "error" });
@@ -134,17 +185,23 @@ async function saveFile(): Promise<boolean> {
 }
 
 async function saveFileAs(): Promise<boolean> {
+  const tab = tabs.active;
+  if (!tab) return false;
   const selected = await dialogSave({
-    defaultPath: fileName ?? "untitled.volt",
+    defaultPath: tab.name,
     filters: [voltFilter],
   });
   if (selected === null) return false;
   try {
     await writeTextFile(selected, editorText(view));
-    currentPath = selected;
-    fileName = fileNameFromPath(selected);
-    setDirty(false);
-    updateStatusBar();
+    // Re-key the buffer under the new path and update the tab.
+    const oldPath = tab.path;
+    buffers.delete(oldPath);
+    buffers.set(selected, editorText(view));
+    tabs.close(oldPath);
+    tabs.open(selected);
+    loadBufferIntoEditor(selected);
+    await pushRecentFile(selected);
     return true;
   } catch (err) {
     await dialogMessage(`Cannot save: ${err}`, { title: "Volt IDE", kind: "error" });
@@ -152,24 +209,77 @@ async function saveFileAs(): Promise<boolean> {
   }
 }
 
+async function closeTab(path: string) {
+  if (!(await confirmDiscard(path))) return;
+  commitActiveBuffer();
+  buffers.delete(path);
+  const next = tabs.close(path);
+  if (next) {
+    loadBufferIntoEditor(next);
+  } else {
+    // No tabs left — show the start screen.
+    showStartScreen();
+    hardwarePanel.clear();
+    updateStatusBar();
+  }
+}
+
+function showStartScreen() {
+  startScreen.classList.remove("hidden");
+  document.getElementById("editor-region")!.classList.add("hidden");
+  renderStartScreen();
+}
+
+function hideStartScreen() {
+  startScreen.classList.add("hidden");
+  document.getElementById("editor-region")!.classList.remove("hidden");
+}
+
+function renderStartScreen() {
+  const recents = settings.recent_files ?? [];
+  recentList.textContent = "";
+  if (recents.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "recent-empty";
+    empty.textContent = "No recent files yet — open a .volt file to get started.";
+    recentList.appendChild(empty);
+    return;
+  }
+  for (const path of recents) {
+    const row = document.createElement("button");
+    row.className = "recent-row";
+    row.title = path;
+    const name = document.createElement("span");
+    name.className = "recent-name";
+    name.textContent = fileNameFromPath(path);
+    const dir = document.createElement("span");
+    dir.className = "recent-dir";
+    dir.textContent = dirNameFromPath(path);
+    row.append(name, dir);
+    row.addEventListener("click", () => openPath(path));
+    recentList.appendChild(row);
+  }
+}
+
 // ---- compile / flash -------------------------------------------------
 
 async function requireSavedFile(): Promise<string | null> {
-  if (currentPath === null) {
-    await dialogMessage("Save the file first.", { title: "Volt IDE", kind: "info" });
+  const path = activePath();
+  if (path === null) {
+    await dialogMessage("Open a file first.", { title: "Volt IDE", kind: "info" });
     return null;
   }
-  if (dirty) {
-    const ok = await saveFile();
+  if (activeTabDirty()) {
+    const ok = await saveActiveFile();
     if (!ok) return null;
   }
-  return currentPath;
+  return path;
 }
 
 async function compile() {
   const path = await requireSavedFile();
   if (!path) return;
-  setOverlay(`compiling ${fileName}…`);
+  setOverlay(`compiling ${fileNameFromPath(path)}…`);
   setStatusDot("compiling");
   await persistPortAndBoard();
   try {
@@ -192,7 +302,7 @@ async function flash() {
     });
     return;
   }
-  setOverlay(`uploading ${fileName} → ${port}…`);
+  setOverlay(`uploading ${fileNameFromPath(path)} → ${port}…`);
   setStatusDot("uploading");
   await persistPortAndBoard();
   try {
@@ -306,11 +416,15 @@ function setupToolbar() {
 
   btnOpen.addEventListener("click", openFileDialog);
   btnFolder.addEventListener("click", openFolderDialog);
-  btnSave.addEventListener("click", () => saveFile());
+  btnSave.addEventListener("click", () => saveActiveFile());
   btnSaveAs.addEventListener("click", () => saveFileAs());
   btnCompile.addEventListener("click", compile);
   btnFlash.addEventListener("click", flash);
   btnScan.addEventListener("click", refreshPorts);
+
+  // Start screen buttons.
+  document.getElementById("btn-start-open")!.addEventListener("click", openFileDialog);
+  document.getElementById("btn-start-folder")!.addEventListener("click", openFolderDialog);
 
   (document.getElementById("select-board") as HTMLSelectElement).addEventListener(
     "change",
@@ -336,7 +450,12 @@ function setupToolbar() {
       saveFileAs();
     } else if (key === "s") {
       event.preventDefault();
-      saveFile();
+      saveActiveFile();
+    } else if (key === "w") {
+      // Ctrl+W: close the active tab
+      event.preventDefault();
+      const path = activePath();
+      if (path) closeTab(path);
     } else if (key === "b") {
       event.preventDefault();
       compile();
@@ -348,28 +467,38 @@ function setupToolbar() {
 }
 
 function setupTabs() {
-  const bindSidebar = document
-    .getElementById("sidebar-tabs")!
-    .querySelectorAll("button");
-  const bindBottom = document
-    .getElementById("bottom-tabs")!
-    .querySelectorAll("button");
+  tabs = new TabManager(
+    (path) => {
+      // Switching tabs: commit current buffer, load the new one.
+      commitActiveBuffer();
+      loadBufferIntoEditor(path);
+      hideStartScreen();
+    },
+    (path) => {
+      closeTab(path);
+    },
+  );
+}
 
-  const activate = (tabs: NodeListOf<HTMLButtonElement>, prefix: string, name: string) => {
-    for (const btn of tabs) btn.classList.toggle("active", btn.dataset.tab === name);
-    document.getElementById(`panel-${prefix}-${name}`)?.classList.remove("hidden");
-    for (const btn of tabs) {
-      if (btn.dataset.tab !== name)
-        document.getElementById(`panel-${prefix}-${btn.dataset.tab}`)?.classList.add("hidden");
+function setupDragAndDrop() {
+  onFileDrop(async (paths) => {
+    for (const p of paths) {
+      try {
+        const entries = await listDir(p);
+        // Directory: use it as the explorer project folder.
+        explorer.setDirectory(p);
+        statusHint.textContent = `folder: ${p}`;
+        const volt = entries.find((c) => c.name.endsWith(".volt"));
+        if (volt) await openPath(volt.path);
+      } catch {
+        // Not a directory — treat as a file.
+        if (p.toLowerCase().endsWith(".volt")) {
+          await openPath(p);
+        }
+      }
     }
-  };
-
-  for (const btn of bindSidebar) {
-    btn.addEventListener("click", () => activate(bindSidebar, "", btn.dataset.tab!));
-  }
-  for (const btn of bindBottom) {
-    btn.addEventListener("click", () => activate(bindBottom, "", btn.dataset.tab!));
-  }
+    await refreshPorts();
+  });
 }
 
 function applyFontSize() {
@@ -421,17 +550,34 @@ async function bootstrap() {
   });
   applyFontSize();
 
-  consolePanel.setDoneHandler(toolchainOnCompileDone);
-  setupToolbar();
   setupTabs();
+  setupToolbar();
+  setupTabsUI();
   setupSettings();
+  setupDragAndDrop();
 
+  consolePanel.setDoneHandler(toolchainOnCompileDone);
   await serialPanel.listen();
   await consolePanel.listen();
   await initToolchainStatus();
   await refreshPorts();
 
   updateStatusBar();
+  showStartScreen();
+}
+
+/** Wire the static tab-bar elements once tabs exist. */
+function setupTabsUI() {
+  document.getElementById("tab-bar")!.addEventListener("auxclick", (e) => {
+    // Middle-click closes a tab.
+    if (e.button === 1) {
+      const tabEl = (e.target as HTMLElement).closest<HTMLElement>(".tab");
+      if (tabEl) {
+        const path = tabEl.dataset.path;
+        if (path) closeTab(path);
+      }
+    }
+  });
 }
 
 bootstrap();

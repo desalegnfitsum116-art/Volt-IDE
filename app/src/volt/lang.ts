@@ -220,7 +220,7 @@ export const voltKeymap = keymap.of([
 export const voltTheme = HighlightStyle.define([
   { tag: tags.keyword, color: "#7B61FF", fontWeight: "600" },
   { tag: tags.namespace, color: "#E3A15B", fontWeight: "600" },
-  { tag: tags.function, color: "#61AFEF" },
+  { tag: tags.function(tags.name), color: "#61AFEF" },
   { tag: tags.string, color: "#A3E635" },
   { tag: tags.number, color: "#F5A97F" },
   { tag: tags.comment, color: "#5C6370", fontStyle: "italic" },
@@ -228,8 +228,8 @@ export const voltTheme = HighlightStyle.define([
   { tag: tags.variableName, color: "#D8DCEE" },
   { tag: tags.typeName, color: "#56B6C2" },
   { tag: tags.bool, color: "#D19A66" },
-  { tag: tags.constant, color: "#D19A66" },
-  { tag: tags.standard, color: "#A9B8FF" },
+  { tag: tags.constant(tags.name), color: "#D19A66" },
+  { tag: tags.standard(tags.name), color: "#A9B8FF" },
 ]);
 
 /** Language support for Volt: grammar (highlighting) + indentation + theme. */

@@ -48,7 +48,6 @@ export class Explorer {
     for (const e of entries) {
       const row = document.createElement("div");
       row.className = "tree-row";
-      if (!e.is_dir && !e.name.endsWith(".volt")) continue;
 
       if (e.is_dir) {
         const expanded = this.nodeState.get(e.path) ?? true;
@@ -78,12 +77,19 @@ export class Explorer {
         root.append(row, children);
         if (expanded) await this.renderDir(e.path, children, depth + 1);
       } else {
+        const isVolt = e.name.endsWith(".volt");
         const icon = document.createElement("span");
         icon.className = "icon";
-        icon.textContent = "🟢";
+        icon.textContent = isVolt ? "🟢" : "📄";
         const label = document.createElement("span");
         label.textContent = e.name;
-        row.classList.add("volt-file");
+        if (isVolt) row.classList.add("volt-file");
+        else {
+          row.classList.add("non-volt");
+          label.classList.add("muted-name");
+          // Non-Volt files are still clickable (view-only later stages);
+          // Stage 3 opens them in the editor as plain text.
+        }
         row.append(icon, label);
         row.style.paddingLeft = `${4 + depth * 14}px`;
         row.addEventListener("click", (ev) => {
@@ -99,7 +105,9 @@ export class Explorer {
   /** Mark the currently-open editor file as selected in the tree. */
   highlightOpen(path: string) {
     const name = fileNameFromPath(path);
-    const rows = this.tree.querySelectorAll<HTMLElement>(".tree-row.volt-file span:last-child");
+    const rows = this.tree.querySelectorAll<HTMLElement>(
+      ".tree-row.volt-file span:last-child, .tree-row.non-volt span:last-child",
+    );
     for (const row of rows) {
       const r = row.closest("div.tree-row") ?? row.parentElement;
       r?.classList.toggle("selected", row.textContent === name);

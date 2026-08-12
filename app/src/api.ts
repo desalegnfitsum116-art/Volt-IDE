@@ -28,6 +28,7 @@ export interface Settings {
   python?: string | null;
   theme?: string | null;
   font_size?: number | null;
+  recent_files?: string[] | null;
 }
 
 export interface DirEntry {
@@ -113,6 +114,11 @@ export function serialIsOpen(): Promise<boolean> {
 
 export function onEvent<T>(event: string, cb: (payload: T) => void): Promise<() => void> {
   return listen<T>(event, (e) => cb(e.payload));
+}
+
+/** Files/folders dropped onto the window (emitted by the Rust backend). */
+export function onFileDrop(cb: (paths: string[]) => void): Promise<() => void> {
+  return onEvent<string[]>("file-drop", cb);
 }
 
 // ---- settings --------------------------------------------------------

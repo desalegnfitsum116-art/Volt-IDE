@@ -28,7 +28,7 @@
       <span id="file-label">No file open</span>
     </header>
 
-    <!-- File tab bar (multi-tab editing, wired in Stage 3) -->
+    <!-- File tab bar (multi-tab editing) -->
     <div id="tab-bar"></div>
 
     <!-- Main: explorer | editor | hardware -->
@@ -43,7 +43,24 @@
         </section>
       </aside>
 
-      <section id="editor-region">
+      <!-- Start screen (recent files / quick actions) -->
+      <section id="start-screen" class="hidden">
+        <div class="start-inner">
+          <div class="start-logo" aria-hidden="true">⚡</div>
+          <h1 class="start-title">Volt <span>IDE</span></h1>
+          <p class="start-subtitle">A focused editor for the Volt language — Arduino/AVR, from source to board.</p>
+          <div class="start-actions">
+            <button id="btn-start-open" class="start-btn primary">Open file…</button>
+            <button id="btn-start-folder" class="start-btn">Open folder…</button>
+          </div>
+          <div class="recent-section">
+            <div class="recent-heading">Recent files</div>
+            <div id="recent-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="editor-region" class="hidden">
         <div id="editor-container"></div>
         <div id="editor-overlay" class="hidden"></div>
       </section>
