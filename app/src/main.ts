@@ -1,8 +1,8 @@
 import { open as dialogOpen, save as dialogSave, message as dialogMessage, ask as dialogAsk } from "@tauri-apps/plugin-dialog";
 import { EditorView } from "@codemirror/view";
 
-import { createEditor, editorText } from "./editor";
-import { ConsolePanel } from "./console";
+import { createEditor, editorText, jumpToPosition } from "./editor";
+import { ConsolePanel, ConsoleErrorRef } from "./console";
 import { SerialPanel } from "./serial";
 import { Explorer } from "./explorer";
 import { HardwarePanel } from "./hardware";
@@ -557,6 +557,7 @@ async function bootstrap() {
   setupDragAndDrop();
 
   consolePanel.setDoneHandler(toolchainOnCompileDone);
+  consolePanel.setJumpHandler(onConsoleErrorJump);
   await serialPanel.listen();
   await consolePanel.listen();
   await initToolchainStatus();
@@ -564,6 +565,29 @@ async function bootstrap() {
 
   updateStatusBar();
   showStartScreen();
+}
+
+/**
+ * Jump the editor to a compiler-reported location. If the path isn't the
+ * active file (e.g. an include or an error from a different tab), open it
+ * first, then move the cursor.
+ */
+async function onConsoleErrorJump(ref: ConsoleErrorRef) {
+  const norm = (p: string) => p.replace(/\\/g, "/");
+  const active = activePath();
+  if (active && norm(active) === norm(ref.path)) {
+    jumpToPosition(view, ref.line, ref.col);
+    return;
+  }
+  // Try to open the errored file, then jump once it's loaded.
+  try {
+    await openPath(ref.path);
+    // openPath loads the buffer synchronously via loadBufferIntoEditor,
+    // so the cursor jump can run immediately after.
+    jumpToPosition(view, ref.line, ref.col);
+  } catch {
+    // File no longer exists or unreadable — keep the error visible in console.
+  }
 }
 
 /** Wire the static tab-bar elements once tabs exist. */

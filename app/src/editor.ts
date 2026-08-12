@@ -144,3 +144,20 @@ export function replaceText(view: EditorView, text: string) {
     changes: { from: 0, to: view.state.doc.length, insert: text },
   });
 }
+
+/**
+ * Move the cursor to `line:col` (1-based) and scroll it into view.
+ * Used by clickable console errors that should jump the editor.
+ */
+export function jumpToPosition(view: EditorView, line: number, col: number) {
+  const doc = view.state.doc;
+  const safeLine = Math.min(Math.max(line, 1), doc.lines);
+  const lineInfo = doc.line(safeLine);
+  const pos = lineInfo.from + Math.min(Math.max(col - 1, 0), lineInfo.length);
+  view.dispatch({
+    selection: { anchor: pos },
+    scrollIntoView: true,
+    effects: EditorView.scrollIntoView(pos, { y: "center" }),
+  });
+  view.focus();
+}

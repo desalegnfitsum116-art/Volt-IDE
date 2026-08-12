@@ -705,6 +705,49 @@ input[type="number"] {
 .mono-scroll .out-info { color: var(--success); }
 .mono-scroll .out-muted { color: var(--muted-foreground); }
 
+/* Clickable voltc error/warning lines (Stage 4: jump to source). */
+.console-error-link {
+  display: inline;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 1px 2px;
+  margin: 0 0;
+}
+
+.console-error-link .console-error-loc {
+  font-weight: 600;
+}
+
+.console-error-link.error .console-error-loc {
+  color: var(--destructive);
+}
+
+.console-error-link.warning .console-error-loc {
+  color: var(--warning);
+}
+
+.console-error-link.error .console-error-msg.error {
+  color: var(--destructive);
+}
+
+.console-error-link.warning .console-error-msg.warning {
+  color: var(--warning);
+}
+
+.console-error-link:hover {
+  background: var(--primary-soft);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.console-error-link.error:hover .console-error-loc {
+  color: var(--destructive);
+}
+
+.console-error-link.warning:hover .console-error-loc {
+  color: var(--warning);
+}
+
 #serial-input-row {
   display: flex;
   gap: 6px;
