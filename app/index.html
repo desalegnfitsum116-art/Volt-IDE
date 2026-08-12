@@ -7,40 +7,39 @@
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
+    <!-- Toolbar -->
     <header id="toolbar">
-      <span id="app-title">Volt IDE</span>
+      <span id="app-title">Volt <span class="app-bolt">IDE</span></span>
       <div class="toolbar-group">
         <button id="btn-open" title="Open file (Ctrl+O)">Open</button>
-        <button id="btn-open-folder" title="Open folder as project">Folder</button>
+        <button id="btn-open-folder" title="Open folder as project (Ctrl+Shift+K)">Folder</button>
         <button id="btn-save" title="Save (Ctrl+S)">Save</button>
         <button id="btn-saveas" title="Save As (Ctrl+Shift+S)">Save As</button>
       </div>
       <div class="toolbar-group">
-        <button id="btn-compile" title="Compile with voltc (Ctrl+B)">Compile</button>
+        <button id="btn-compile" title="Verify: compile with voltc (Ctrl+Enter)">Verify</button>
+        <button id="btn-flash" title="Upload: compile and flash to board (Ctrl+R)">Upload</button>
         <select id="select-board" title="Target board"></select>
         <select id="select-port" title="Serial port"></select>
         <button id="btn-refresh-ports" title="Re-scan connected boards">Scan</button>
-        <button id="btn-flash" title="Compile and upload to board (Ctrl+R)">Flash to Board</button>
       </div>
-      <button id="btn-settings" title="IDE settings">⚙</button>
+      <span id="status-dot" class="status-dot idle" title="IDE status"></span>
+      <button id="btn-settings" title="IDE settings">Settings</button>
       <span id="file-label">No file open</span>
     </header>
 
+    <!-- File tab bar (multi-tab editing, wired in Stage 3) -->
+    <div id="tab-bar"></div>
+
+    <!-- Main: explorer | editor | hardware -->
     <main id="main">
       <aside id="sidebar">
         <div id="sidebar-tabs">
           <button data-tab="explorer" class="active">Files</button>
-          <button data-tab="hardware">Hardware</button>
         </div>
         <section id="panel-explorer" class="side-panel">
           <div id="explorer-root" class="explorer-muted">No folder open — click <em>Folder</em></div>
           <div id="explorer-tree" class="explorer-tree hidden"></div>
-        </section>
-        <section id="panel-hardware" class="side-panel hidden">
-          <div class="panel-heading">Hardware objects in this file</div>
-          <div id="hardware-list" class="hardware-list">
-            <div class="explorer-muted">No hardware found yet.</div>
-          </div>
         </section>
       </aside>
 
@@ -48,11 +47,19 @@
         <div id="editor-container"></div>
         <div id="editor-overlay" class="hidden"></div>
       </section>
+
+      <aside id="hardware-sidebar">
+        <div class="panel-heading">Hardware objects</div>
+        <div id="hardware-list" class="hardware-list">
+          <div class="explorer-muted">No hardware found yet.</div>
+        </div>
+      </aside>
     </main>
 
+    <!-- Bottom console -->
     <div id="bottom">
       <div id="bottom-tabs">
-        <button data-tab="console" class="active">Console</button>
+        <button data-tab="console" class="active">Output</button>
         <button data-tab="serial">Serial Monitor</button>
       </div>
       <section id="panel-console" class="bottom-panel">
@@ -72,26 +79,24 @@
         </div>
         <pre id="serial-output" class="mono-scroll"></pre>
         <div id="serial-input-row">
-          <input id="serial-input" type="text" placeholder="Type to send and press Enter…" autocomplete="off" />
+          <input id="serial-input" type="text" placeholder="Type to send and press Enter" autocomplete="off" />
           <button id="btn-serial-send">Send</button>
         </div>
       </section>
     </div>
 
+    <!-- Status bar -->
     <footer id="statusbar">
-      <span id="status-path" title="Active file path"></span>
+      <span id="status-cursor" title="Cursor position">Ln 1, Col 1</span>
+      <span id="status-zoom" title="Editor zoom">100%</span>
+      <span id="status-board" title="Board / port">Board: —</span>
       <span id="status-toolchain" title="AVR toolchain status">toolchain…</span>
       <span id="status-hint"></span>
+      <span id="status-path" title="Active file path"></span>
     </footer>
 
+    <!-- Settings popover -->
     <div id="settings-popover" class="hidden">
-      <div class="settings-row">
-        <label for="set-theme">Theme</label>
-        <select id="set-theme">
-          <option value="dark">Dark</option>
-          <option value="light">Light</option>
-        </select>
-      </div>
       <div class="settings-row">
         <label for="set-font">Font size</label>
         <input id="set-font" type="number" min="10" max="24" step="1" />

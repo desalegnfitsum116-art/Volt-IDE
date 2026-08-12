@@ -24,7 +24,6 @@ export class SerialPanel {
 
   constructor(
     private getSettings: () => Settings,
-    private onToggle: (open: boolean) => void,
   ) {
     this.outputEl = document.getElementById("serial-output")!;
     this.statusEl = document.getElementById("serial-status")!;

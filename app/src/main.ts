@@ -27,24 +27,28 @@ let currentPath: string | null = null;
 let fileName: string | null = null;
 let dirty = false;
 let settings: Settings = {};
-let lastOpenDir: string | null = null;
 
 const fileLabel = document.getElementById("file-label") as HTMLElement;
 const statusPath = document.getElementById("status-path") as HTMLElement;
 const statusToolchain = document.getElementById("status-toolchain") as HTMLElement;
 const statusHint = document.getElementById("status-hint") as HTMLElement;
+const statusBoard = document.getElementById("status-board") as HTMLElement;
 const overlay = document.getElementById("editor-overlay") as HTMLElement;
 
 const consolePanel = new ConsolePanel();
-const serialPanel = new SerialPanel(() => settings, (open) => {
-  document.getElementById("serial-input")?.dispatchEvent(new Event("input"));
-});
+const serialPanel = new SerialPanel(() => settings);
 const explorer = new Explorer((path) => openPath(path));
 const hardwarePanel = new HardwarePanel();
 
 function setOverlay(text: string | null) {
   overlay.textContent = text ?? "";
   overlay.classList.toggle("hidden", text === null);
+}
+
+function setStatusDot(state: "idle" | "compiling" | "uploading" | "ok" | "error") {
+  const dot = document.getElementById("status-dot")!;
+  dot.className = `status-dot ${state}`;
+  dot.title = state;
 }
 
 function setDirty(value: boolean) {
@@ -100,7 +104,6 @@ async function openFileDialog() {
 async function openFolderDialog() {
   const selected = await dialogOpen({ directory: true, multiple: false });
   if (typeof selected !== "string") return;
-  lastOpenDir = selected;
   explorer.setDirectory(selected);
   statusHint.textContent = `folder: ${selected}`;
   // Autodetect home file for convenience.
@@ -167,6 +170,7 @@ async function compile() {
   const path = await requireSavedFile();
   if (!path) return;
   setOverlay(`compiling ${fileName}…`);
+  setStatusDot("compiling");
   await persistPortAndBoard();
   try {
     consolePanel.start("compile", path);
@@ -189,6 +193,7 @@ async function flash() {
     return;
   }
   setOverlay(`uploading ${fileName} → ${port}…`);
+  setStatusDot("uploading");
   await persistPortAndBoard();
   try {
     consolePanel.start("upload", `${path} → ${port}`);
@@ -207,6 +212,7 @@ async function persistPortAndBoard() {
   const next = { ...settings, board, port };
   settings = next;
   await writeSettings(next);
+  updateBoardStatus();
 }
 
 async function refreshPorts() {
@@ -258,6 +264,16 @@ async function refreshPorts() {
   } catch (err) {
     portSel.innerHTML = `<option>port scan failed</option>`;
   }
+  updateBoardStatus();
+}
+
+function updateBoardStatus() {
+  const boardSel = document.getElementById("select-board") as HTMLSelectElement;
+  const portSel = document.getElementById("select-port") as HTMLSelectElement;
+  const board = boardSel.value || settings.board || "uno";
+  const port = portSel.value || settings.port;
+  statusBoard.textContent = port ? `Board: ${board} (${port})` : `Board: ${board}`;
+  statusBoard.className = port ? "connected" : "";
 }
 
 async function initToolchainStatus() {
@@ -275,6 +291,7 @@ async function initToolchainStatus() {
 
 async function toolchainOnCompileDone(ok: boolean) {
   setOverlay(null);
+  setStatusDot(ok ? "ok" : "error");
   if (!ok) await initToolchainStatus();
 }
 
@@ -294,6 +311,15 @@ function setupToolbar() {
   btnCompile.addEventListener("click", compile);
   btnFlash.addEventListener("click", flash);
   btnScan.addEventListener("click", refreshPorts);
+
+  (document.getElementById("select-board") as HTMLSelectElement).addEventListener(
+    "change",
+    updateBoardStatus,
+  );
+  (document.getElementById("select-port") as HTMLSelectElement).addEventListener(
+    "change",
+    updateBoardStatus,
+  );
 
   window.addEventListener("keydown", (event) => {
     if (!(event.ctrlKey || event.metaKey)) return;
@@ -346,10 +372,6 @@ function setupTabs() {
   }
 }
 
-function applyTheme() {
-  document.body.classList.toggle("theme-light", settings.theme === "light");
-}
-
 function applyFontSize() {
   const el = document.querySelector("#editor-container .cm-editor") as HTMLElement | null;
   if (el) el.style.fontSize = `${settings.font_size ?? 14}px`;
@@ -358,7 +380,6 @@ function applyFontSize() {
 function setupSettings() {
   const btn = document.getElementById("btn-settings")!;
   const popover = document.getElementById("settings-popover")!;
-  const theme = document.getElementById("set-theme") as HTMLSelectElement;
   const font = document.getElementById("set-font") as HTMLInputElement;
   const python = document.getElementById("set-python") as HTMLInputElement;
 
@@ -370,12 +391,10 @@ function setupSettings() {
   document.getElementById("btn-settings-save")!.addEventListener("click", async () => {
     settings = {
       ...settings,
-      theme: theme.value,
       font_size: Number(font.value) || 14,
       python: python.value.trim() || undefined,
     };
     await writeSettings(settings);
-    applyTheme();
     applyFontSize();
     await initToolchainStatus();
     popover.classList.add("hidden");
@@ -384,8 +403,7 @@ function setupSettings() {
   popover.addEventListener("click", (e) => e.stopPropagation());
   document.addEventListener("click", () => popover.classList.add("hidden"));
   // Fill popover from the loaded settings on open so the values are current.
-  btn.addEventListener("click", (e) => {
-    theme.value = settings.theme ?? "dark";
+  btn.addEventListener("click", () => {
     font.value = String(settings.font_size ?? 14);
     python.value = settings.python ?? "";
   });
@@ -395,7 +413,6 @@ async function bootstrap() {
   settings = await readSettings().catch(() => ({}));
   const baudEl = document.getElementById("serial-baud") as HTMLInputElement;
   if (settings.baud) baudEl.value = String(settings.baud);
-  applyTheme();
 
   view = createEditor(document.getElementById("editor-container")!, {
     settings: () => settings,
