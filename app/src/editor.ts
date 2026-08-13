@@ -3,7 +3,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { autocompletion } from "@codemirror/autocomplete";
 import { linter, Diagnostic, setDiagnostics } from "@codemirror/lint";
-import { searchKeymap } from "@codemirror/search";
+import { searchKeymap, search } from "@codemirror/search";
 
 import { voltLanguage, voltKeywords, MODULE_METHODS } from "./volt/lang";
 import { checkSource, Settings, Diagnostic as VoltDiagnostic } from "./api";
@@ -99,6 +99,7 @@ export function createEditor(
     extensions: [
       basicSetup,
       keymap.of(searchKeymap),
+      search(),
       voltLanguage(),
       lintExt,
       completionExt,

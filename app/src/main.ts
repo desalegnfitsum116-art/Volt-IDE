@@ -772,8 +772,10 @@ async function bootstrap() {
   win.listen("tauri://move", () => saveWindowState());
 
   // Stage 7: crash recovery — persist dirty buffers before the window closes.
-  window.addEventListener("beforeunload", () => {
-    void persistRecovery();
+  // Use Tauri's close-requested event (synchronous) instead of beforeunload,
+  // which browsers don't wait for when the handler is async.
+  win.listen("tauri://close-requested", async () => {
+    await persistRecovery();
   });
 
   consolePanel.setDoneHandler(toolchainOnCompileDone);
