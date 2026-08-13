@@ -29,6 +29,11 @@ export interface Settings {
   theme?: string | null;
   font_size?: number | null;
   recent_files?: string[] | null;
+  last_folder?: string | null;
+  window_width?: number | null;
+  window_height?: number | null;
+  window_x?: number | null;
+  window_y?: number | null;
 }
 
 export interface DirEntry {
@@ -129,6 +134,12 @@ export function readSettings(): Promise<Settings> {
 
 export function writeSettings(settings: Settings): Promise<void> {
   return invoke("write_settings", { settings });
+}
+
+// ---- recovery --------------------------------------------------------
+
+export function clearRecovery(): Promise<void> {
+  return invoke("clear_recovery");
 }
 
 // ---- misc ------------------------------------------------------------

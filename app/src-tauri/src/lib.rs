@@ -9,6 +9,7 @@ pub mod settings;
 
 use commands::serial::SerialState;
 use settings::Settings;
+use tauri::Emitter;
 
 /// Absolute path to the bundled `voltc.py` inside this repo's `toolchain/`.
 pub fn bundled_voltc_dir() -> std::path::PathBuf {
@@ -39,9 +40,7 @@ pub fn run() {
         .manage(SerialState::default())
         .on_window_event(|window, event| {
             // Drag-and-drop .volt files/folders onto the window (Stage 3).
-            if let tauri::WindowEvent::FileDrop(tauri::file_drop::FileDropEvent::Drop { paths, .. }) =
-                event
-            {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
                 let paths: Vec<String> = paths
                     .iter()
                     .map(|p| p.to_string_lossy().into_owned())
@@ -67,6 +66,9 @@ pub fn run() {
             commands::serial::serial_is_open,
             crate::settings::read_settings,
             crate::settings::write_settings,
+            crate::settings::write_recovery,
+            crate::settings::read_recovery,
+            crate::settings::clear_recovery,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Volt IDE");

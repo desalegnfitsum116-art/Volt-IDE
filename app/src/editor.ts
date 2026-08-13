@@ -1,8 +1,9 @@
 import { basicSetup } from "codemirror";
-import { EditorView } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { autocompletion } from "@codemirror/autocomplete";
 import { linter, Diagnostic, setDiagnostics } from "@codemirror/lint";
+import { searchKeymap } from "@codemirror/search";
 
 import { voltLanguage, voltKeywords, MODULE_METHODS } from "./volt/lang";
 import { checkSource, Settings, Diagnostic as VoltDiagnostic } from "./api";
@@ -20,6 +21,7 @@ export function createEditor(
     settings: () => Settings;
     onChange: (doc: string) => void;
     onLint?: (counts: { errors: number; warnings: number }) => void;
+    onCursor?: (line: number, col: number) => void;
   },
 ): EditorView {
   // Volatile capability: debounce lint requests so typing doesn't spam
@@ -96,12 +98,18 @@ export function createEditor(
     doc: "",
     extensions: [
       basicSetup,
+      keymap.of(searchKeymap),
       voltLanguage(),
       lintExt,
       completionExt,
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           opts.onChange(update.state.doc.toString());
+        }
+        if (opts.onCursor && (update.docChanged || update.selectionSet)) {
+          const head = update.state.selection.main.head;
+          const line = update.state.doc.lineAt(head);
+          opts.onCursor(line.number, head - line.from + 1);
         }
       }),
     ],
@@ -143,6 +151,19 @@ export function replaceText(view: EditorView, text: string) {
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: text },
   });
+}
+
+/** Base editor font size (px) used to compute zoom percentages. */
+export const BASE_FONT_SIZE = 14;
+
+/**
+ * Set the editor font size and return the resulting zoom percentage
+ * (relative to BASE_FONT_SIZE). Used by Ctrl/Cmd +/-/0 and Ctrl+scroll.
+ */
+export function setEditorFontSize(view: EditorView, px: number): number {
+  const el = view.dom.querySelector(".cm-editor") as HTMLElement | null;
+  if (el) el.style.fontSize = `${px}px`;
+  return Math.round((px / BASE_FONT_SIZE) * 100);
 }
 
 /**

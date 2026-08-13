@@ -1,7 +1,9 @@
 import { open as dialogOpen, save as dialogSave, message as dialogMessage, ask as dialogAsk } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow, LogicalSize, LogicalPosition } from "@tauri-apps/api/window";
 import { EditorView } from "@codemirror/view";
 
-import { createEditor, editorText, jumpToPosition } from "./editor";
+import { createEditor, editorText, jumpToPosition, setEditorFontSize, BASE_FONT_SIZE } from "./editor";
 import { ConsolePanel, ConsoleErrorRef } from "./console";
 import { SerialPanel } from "./serial";
 import { Explorer } from "./explorer";
@@ -16,6 +18,7 @@ import {
   uploadFile,
   readSettings,
   writeSettings,
+  clearRecovery,
   Settings,
   listDir,
   fileNameFromPath,
@@ -25,9 +28,14 @@ import {
 
 const voltFilter = { name: "Volt", extensions: ["volt"] };
 const MAX_RECENT = 10;
+const AUTOSAVE_DELAY_MS = 3000; // debounce: save after 3s of inactivity
+const BOARD_POLL_MS = 5000; // live board/port re-scan interval
 
 let view: EditorView;
 let settings: Settings = {};
+let zoomPct = 100;
+let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
+let boardPollTimer: ReturnType<typeof setInterval> | undefined;
 
 /** Per-open-tab document buffers (so switching tabs never loses edits). */
 const buffers = new Map<string, string>();
@@ -38,6 +46,8 @@ const statusPath = document.getElementById("status-path") as HTMLElement;
 const statusToolchain = document.getElementById("status-toolchain") as HTMLElement;
 const statusHint = document.getElementById("status-hint") as HTMLElement;
 const statusBoard = document.getElementById("status-board") as HTMLElement;
+const statusZoom = document.getElementById("status-zoom") as HTMLElement;
+const statusCursor = document.getElementById("status-cursor") as HTMLElement;
 const overlay = document.getElementById("editor-overlay") as HTMLElement;
 const startScreen = document.getElementById("start-screen") as HTMLElement;
 const recentList = document.getElementById("recent-list") as HTMLElement;
@@ -100,8 +110,149 @@ function onDocumentChange(source: string) {
   if (path) {
     buffers.set(path, source);
     if (!activeTabDirty()) setActiveDirty(true);
+    scheduleAutosave();
   }
   hardwarePanel.update(source);
+}
+
+// ---- zoom (brief §5) -------------------------------------------------
+
+function applyZoom(pct: number) {
+  zoomPct = Math.min(300, Math.max(50, pct));
+  const px = Math.round((BASE_FONT_SIZE * zoomPct) / 100);
+  setEditorFontSize(view, px);
+  statusZoom.textContent = `${zoomPct}%`;
+}
+
+function zoomIn() {
+  applyZoom(zoomPct + 10);
+}
+
+function zoomOut() {
+  applyZoom(zoomPct - 10);
+}
+
+function zoomReset() {
+  applyZoom(100);
+}
+
+// ---- auto-save (brief §6) --------------------------------------------
+
+function scheduleAutosave() {
+  if (autosaveTimer) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => {
+    autosaveTimer = undefined;
+    void autosaveActive();
+  }, AUTOSAVE_DELAY_MS);
+}
+
+async function autosaveActive() {
+  const path = activePath();
+  if (!path || !activeTabDirty()) return;
+  try {
+    await writeTextFile(path, editorText(view));
+    buffers.set(path, editorText(view));
+    setActiveDirty(false);
+    statusHint.textContent = "saved";
+    setTimeout(() => {
+      if (statusHint.textContent === "saved") statusHint.textContent = "";
+    }, 2000);
+    // Stage 7: if no tabs are dirty anymore, clear the crash-recovery file.
+    if (!tabs.hasDirty()) {
+      await clearRecovery().catch(() => {});
+    }
+  } catch {
+    // Silent — the user can still save manually; don't nag on every keystroke.
+  }
+}
+
+// ---- live board detection (brief §6) ---------------------------------
+
+function startBoardPolling() {
+  if (boardPollTimer) clearInterval(boardPollTimer);
+  boardPollTimer = setInterval(() => {
+    void refreshPorts();
+  }, BOARD_POLL_MS);
+}
+
+// ---- persistent window state (brief §6) ------------------------------
+
+let windowStateTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Save current window size/position into settings (debounced). */
+async function saveWindowState() {
+  if (windowStateTimer) clearTimeout(windowStateTimer);
+  windowStateTimer = setTimeout(async () => {
+    windowStateTimer = undefined;
+    try {
+      const win = getCurrentWindow();
+      const [size, pos] = await Promise.all([win.innerSize(), win.outerPosition()]);
+      settings = {
+        ...settings,
+        window_width: size.width,
+        window_height: size.height,
+        window_x: pos.x,
+        window_y: pos.y,
+      };
+      await writeSettings(settings).catch(() => {});
+    } catch {
+      // Non-fatal — window state is best-effort.
+    }
+  }, 500);
+}
+
+/** Restore window size/position from settings on launch. */
+async function restoreWindowState() {
+  if (!settings.window_width || !settings.window_height) return;
+  try {
+    const win = getCurrentWindow();
+    await win.setSize(new LogicalSize(settings.window_width!, settings.window_height!));
+    if (settings.window_x !== undefined && settings.window_y !== undefined) {
+      await win.setPosition(new LogicalPosition(settings.window_x!, settings.window_y!));
+    }
+  } catch {
+    // Non-fatal — fall back to default window size.
+  }
+}
+
+// ---- crash recovery (brief §6) ---------------------------------------
+
+/** Persist dirty buffers to a recovery file so unsaved work isn't lost. */
+async function persistRecovery() {
+  const dirty: Record<string, string> = {};
+  for (const tab of tabs.all) {
+    if (tab.dirty) {
+      const text = buffers.get(tab.path);
+      if (text !== undefined) dirty[tab.path] = text;
+    }
+  }
+  try {
+    await invoke("write_recovery", { buffers: dirty });
+  } catch {
+    // Non-fatal; recovery is best-effort.
+  }
+}
+
+/** Restore any crash-recovered buffers on launch. */
+async function restoreRecovery() {
+  try {
+    const recovered = await invoke<Record<string, string>>("read_recovery");
+    for (const [path, text] of Object.entries(recovered)) {
+      if (!tabs.isOpen(path)) {
+        buffers.set(path, text);
+        tabs.open(path);
+        tabs.setDirty(path, true);
+      }
+    }
+    if (Object.keys(recovered).length > 0) {
+      statusHint.textContent = "recovered unsaved changes";
+      setTimeout(() => {
+        if (statusHint.textContent === "recovered unsaved changes") statusHint.textContent = "";
+      }, 4000);
+    }
+  } catch {
+    // No recovery file or read error — fine.
+  }
 }
 
 function onLintCounts(_counts: { errors: number; warnings: number }) {
@@ -152,6 +303,9 @@ async function openFolderDialog() {
   if (typeof selected !== "string") return;
   explorer.setDirectory(selected);
   statusHint.textContent = `folder: ${selected}`;
+  // Stage 7: persist last-open project folder.
+  settings = { ...settings, last_folder: selected };
+  await writeSettings(settings).catch(() => {});
   // Autodetect home file for convenience.
   const candidates = await listDir(selected);
   const volt = candidates.find((c) => c.name.endsWith(".volt"));
@@ -177,6 +331,10 @@ async function saveActiveFile(): Promise<boolean> {
     await writeTextFile(path, editorText(view));
     buffers.set(path, editorText(view));
     setActiveDirty(false);
+    // Stage 7: if no tabs are dirty anymore, clear the crash-recovery file.
+    if (!tabs.hasDirty()) {
+      await clearRecovery().catch(() => {});
+    }
     return true;
   } catch (err) {
     await dialogMessage(`Cannot save: ${err}`, { title: "Volt IDE", kind: "error" });
@@ -202,6 +360,10 @@ async function saveFileAs(): Promise<boolean> {
     tabs.open(selected);
     loadBufferIntoEditor(selected);
     await pushRecentFile(selected);
+    // Stage 7: if no tabs are dirty anymore, clear the crash-recovery file.
+    if (!tabs.hasDirty()) {
+      await clearRecovery().catch(() => {});
+    }
     return true;
   } catch (err) {
     await dialogMessage(`Cannot save: ${err}`, { title: "Volt IDE", kind: "error" });
@@ -462,8 +624,32 @@ function setupToolbar() {
     } else if (key === "r") {
       event.preventDefault();
       flash();
+    } else if (key === "=" || key === "+") {
+      // Ctrl/Cmd + : zoom in
+      event.preventDefault();
+      zoomIn();
+    } else if (key === "-" || key === "_") {
+      // Ctrl/Cmd - : zoom out
+      event.preventDefault();
+      zoomOut();
+    } else if (key === "0") {
+      // Ctrl/Cmd 0 : reset zoom
+      event.preventDefault();
+      zoomReset();
     }
   });
+
+  // Ctrl/Cmd + mouse scroll zooms the editor (brief §5).
+  document.getElementById("editor-container")!.addEventListener(
+    "wheel",
+    (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      if (e.deltaY < 0) zoomIn();
+      else zoomOut();
+    },
+    { passive: false },
+  );
 }
 
 function setupTabs() {
@@ -560,18 +746,35 @@ async function bootstrap() {
   const baudEl = document.getElementById("serial-baud") as HTMLInputElement;
   if (settings.baud) baudEl.value = String(settings.baud);
 
+  // Stage 7: restore persisted window size/position.
+  await restoreWindowState();
+
   view = createEditor(document.getElementById("editor-container")!, {
     settings: () => settings,
     onChange: onDocumentChange,
     onLint: onLintCounts,
+    onCursor: (line, col) => {
+      statusCursor.textContent = `Ln ${line}, Col ${col}`;
+    },
   });
   applyFontSize();
+  applyZoom(100);
 
   setupTabs();
   setupToolbar();
   setupTabsUI();
   setupSettings();
   setupDragAndDrop();
+
+  // Stage 7: persist window geometry on resize/move (debounced).
+  const win = getCurrentWindow();
+  win.listen("tauri://resize", () => saveWindowState());
+  win.listen("tauri://move", () => saveWindowState());
+
+  // Stage 7: crash recovery — persist dirty buffers before the window closes.
+  window.addEventListener("beforeunload", () => {
+    void persistRecovery();
+  });
 
   consolePanel.setDoneHandler(toolchainOnCompileDone);
   consolePanel.setJumpHandler(onConsoleErrorJump);
@@ -580,6 +783,23 @@ async function bootstrap() {
   await consolePanel.listen();
   await initToolchainStatus();
   await refreshPorts();
+
+  // Stage 7: restore any crash-recovered buffers, then start live board
+  // polling so connect/disconnect is reflected without a manual refresh.
+  await restoreRecovery();
+  startBoardPolling();
+
+  // Stage 7: restore last-open project folder if any.
+  if (settings.last_folder) {
+    try {
+      await explorer.setDirectory(settings.last_folder);
+      const candidates = await listDir(settings.last_folder);
+      const volt = candidates.find((c) => c.name.endsWith(".volt"));
+      if (volt) await openPath(volt.path);
+    } catch {
+      // Folder no longer accessible — ignore.
+    }
+  }
 
   updateStatusBar();
   showStartScreen();
