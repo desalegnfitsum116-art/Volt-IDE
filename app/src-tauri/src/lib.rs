@@ -36,6 +36,7 @@ pub fn resolve_python(settings: &Settings) -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(settings::SettingsState::default())
         .manage(SerialState::default())
         .on_window_event(|window, event| {
@@ -69,6 +70,9 @@ pub fn run() {
             crate::settings::write_recovery,
             crate::settings::read_recovery,
             crate::settings::clear_recovery,
+            commands::update::check_update,
+            commands::update::download_update,
+            commands::update::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Volt IDE");

@@ -142,6 +142,27 @@ export function clearRecovery(): Promise<void> {
   return invoke("clear_recovery");
 }
 
+// ---- auto-update (Stage 8) --------------------------------------------
+
+export interface UpdateInfo {
+  available: boolean;
+  version: string | null;
+  notes: string | null;
+  current_version: string;
+}
+
+export function checkUpdate(): Promise<UpdateInfo> {
+  return invoke<UpdateInfo>("check_update");
+}
+
+export function downloadUpdate(): Promise<void> {
+  return invoke("download_update");
+}
+
+export function installUpdate(): Promise<void> {
+  return invoke("install_update");
+}
+
 // ---- misc ------------------------------------------------------------
 
 export function fileNameFromPath(path: string): string {
